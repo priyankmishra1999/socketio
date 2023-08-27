@@ -13,6 +13,7 @@ import com.example.sokcetio.model.Type;
 import lombok.extern.log4j.Log4j2;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -26,9 +27,11 @@ public class SocketIOController {
     private SocketIOServer socketServer;
     @Autowired
     JdbcTemplate jdbcTemplate;
+    @Autowired
+    private KafkaTemplate<String, Object> kafkaTemplate;
 
-    SocketIOController(SocketIOServer socketServer){
-        this.socketServer=socketServer;
+    SocketIOController(SocketIOServer socketServer) {
+        this.socketServer = socketServer;
 
         this.socketServer.addConnectListener(onUserConnectWithSocket);
         this.socketServer.addDisconnectListener(onUserDisconnectWithSocket);
@@ -39,7 +42,7 @@ public class SocketIOController {
          * messageSendToUser is socket end point after socket connection user have to send message payload on messageSendToUser event
          */
         this.socketServer.addEventListener("messageSendToUser", Message.class, onSendMessage);
-        this.socketServer.addEventListener("coinData", CoinData.class,onDataSend);
+        this.socketServer.addEventListener("coinData", CoinData.class, onDataSend);
 
     }
 
@@ -69,8 +72,8 @@ public class SocketIOController {
              * Send the same payload to user
              */
 
-            log.info(message.getSenderName()+" user send message to user "+message.getTargetUserName()+" and message is "+message.getMessage());
-            socketServer.getBroadcastOperations().sendEvent(message.getTargetUserName(),client, message);
+            log.info(message.getSenderName() + " user send message to user " + message.getTargetUserName() + " and message is " + message.getMessage());
+            socketServer.getBroadcastOperations().sendEvent(message.getTargetUserName(), client, message);
 
 
             /**
@@ -82,19 +85,19 @@ public class SocketIOController {
     public DataListener<CoinData> onDataSend = new DataListener<CoinData>() {
         @Override
         public void onData(SocketIOClient socketIOClient, CoinData coinData, AckRequest ackRequest) throws Exception {
-            List<Map<String, Object>> maps=null;
-            StringBuilder stringBuilder=null;
-            if(coinData.getType().equals(Type.FULL)) {
+            List<Map<String, Object>> maps = null;
+            StringBuilder stringBuilder = null;
+            if (coinData.getType().equals(Type.FULL)) {
                 stringBuilder = new StringBuilder("select * from centralized_wallet_service.coin");
-            }else {
+            } else {
                 stringBuilder = new StringBuilder("select * from centralized_wallet_service.coin where coin_short_name='BTC'");
             }
-            maps=jdbcTemplate.queryForList(String.valueOf(stringBuilder));
+            maps = jdbcTemplate.queryForList(String.valueOf(stringBuilder));
 
 //            log.info(maps);
             socketServer.getBroadcastOperations().sendEvent(coinData.getType().toString(), maps);
             ackRequest.sendAckData("Message send to target user successfully");
-
+            kafkaTemplate.send("wallet_Data", maps);
         }
     };
 
